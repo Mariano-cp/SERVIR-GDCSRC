@@ -1,0 +1,559 @@
+---
+title: "Limpieza Entidades"
+output: html_notebook
+---
+Importamos la BD del sheet
+```{r}
+library(googlesheets4)
+gs4_auth()
+```
+Necesitamos dos BD
+- una BD sucia que hay que corregir
+- otra BD con las versiones correctas de cada entidad
+```{r}
+library(stringr)
+library(dplyr)
+library(stringi)
+library(stringdist)
+
+sucia <- gs4_get("1TG0DjUaA9csFXMVxNnm76Icd-8_S_Yi6Ka-KiOttj2Q")
+limpia <- gs4_get("1MrWB_LUyCFI3fUj-p65rGrvszq-oI_TK7jv9Ng65dF8")
+
+Unif <- read_sheet(limpia, sheet = "DATOS_GENERALES")
+No_Unif <- read_sheet(sucia, sheet = "83914255314 - Registration Repo")
+```
+
+Creamos un código para cada fila (ayudará en el merge final)
+```{r}
+No_Unif <- No_Unif %>%
+  mutate(codigo_unico = row_number())
+```
+
+Hacemos bases de datos más simples, con menos variables
+```{r}
+U <- Unif[,c(10,11,15:17)]
+S <- No_Unif[,c("Región","Provincia","Distrito","Institución en la que labora","codigo_unico")]
+colnames(S) = c("Departamento","Provincia","Distrito","Entidad","Codigo")
+S$Entidad <- gsub("\\s+", " ", S$Entidad)
+```
+
+Corregimos casos en donde Distrital y Provincial estén mal escritos
+```{r}
+#S$nombres: son valores con palabras corregidas
+#S$Entidad: son valores con palabras originales
+S$nombres <- S$Entidad
+S$nombres <- gsub("DSTRITAL", "DISTRITAL", S$nombres)
+S$nombres <-   gsub("DITRITAL", "DISTRITAL", S$nombres)
+S$nombres <-   gsub("DISRITAL", "DISTRITAL", S$nombres)
+S$nombres <-   gsub("Ditsrital", "Distrital", S$nombres)
+S$nombres <-   gsub("DISTRIOTAL", "DISTRITAL", S$nombres)
+S$nombres <-   gsub("Diatrital", "Distrital", S$nombres)
+S$nombres <-   gsub("Provinciar", "Provincial", S$nombres)
+S$nombres <-   gsub("PRIVINCIAL", "PROVINCIAL", S$nombres)
+S$nombres <-   gsub("Distrito", "Distrital", S$nombres)
+S$nombres <-   gsub("MUNICIPALIDADA", "MUNICIPALIDAD", S$nombres)
+S$nombres <-   gsub("MUNICPALIDAD", "MUNICIPALIDAD", S$nombres)
+S$nombres <-   gsub("PROVINCIALA", "PROVINCIAL", S$nombres)
+S$nombres <-   gsub("26", "VEINTISEIS", S$nombres)
+S$nombres <-   gsub("PROINCIAL", "PROVINCIAL", S$nombres)
+S$nombres <-   gsub("MUNICIPIO", "MUNICIPALIDAD", S$nombres)
+S$nombres <-   gsub("distrital", "Distrital ", S$nombres)
+S$nombres <-   gsub("Provincial", "Provincial ", S$nombres)
+S$nombres <-   gsub("MUNICIPIO", "MUNICIPALIDAD", S$nombres)
+S$nombres <-   gsub("Municipio", "MUNICIPALIDAD", S$nombres)
+S$nombres <-   gsub("DISTRTITAL", "DISTRITAL", S$nombres)
+S$nombres <-   gsub("CAMPO VERDE", "CAMPOVERDE", S$nombres)
+```
+
+Creamos una BD sucia solo con municipalidades distritales
+PD: el piloto ha sido planificado para municipalidades distritales
+```{r}
+U$Entidad <- make.unique(U$Entidad)
+Siglas <- U[,c(1,2)]
+
+Distrital <- S %>%
+  filter(str_detect(nombres, regex("Distrital ", ignore_case = TRUE)))
+Uniformizado_Distrital <- U %>%
+  filter(str_detect(Entidad, regex("Municipalidad Distrital", ignore_case = TRUE)))
+Provincial <- S %>%
+  filter(str_detect(nombres, regex("Provincial ", ignore_case = TRUE)))
+Uniformizado_Lima <- U %>%
+  filter(str_detect(Entidad, regex("MUNICIPALIDAD METROPOLITANA DE LIMA", ignore_case = TRUE)))
+Uniformizado_Provincial <- U %>%
+  filter(str_detect(Entidad, regex("Municipalidad Provincial", ignore_case = TRUE)))
+Total <- S %>%
+  filter(str_detect(nombres, regex("Municipalidad", ignore_case = TRUE)))
+Sin_Distrital <- anti_join(Total, Distrital, by = "nombres")
+Residuo <- anti_join(Sin_Distrital, Provincial, by = "nombres")
+
+Distrital$Nombres <- Distrital$nombres
+Provincial$Nombres <- Provincial$nombres
+Residuo$Nombres <- Residuo$nombres
+
+Distrital$nombres <- make.unique(Distrital$nombres)
+Provincial$nombres <- make.unique(Provincial$nombres)
+Residuo$nombres <- make.unique(Residuo$nombres)
+```
+
+MUNICIPALIDADES DISTRITALES
+```{r}
+golos_distrital <- function(texto){
+  cadena <- texto %>%
+    toupper() %>%
+    gsub("Á", "A", .) %>%
+    gsub("É", "E", .) %>%
+    gsub("Í", "I", .) %>%
+    gsub("Ó", "O", .) %>%
+    gsub("Ú", "U", .) %>%
+    gsub("À", "A", .) %>%
+    gsub("È", "E", .) %>%
+    gsub("Ì", "I", .) %>%
+    gsub("Ò", "O", .) %>%
+    gsub("Ù", "U", .)
+  depa <- Distrital %>%
+    filter(nombres == texto) %>%
+    select(Departamento) %>%
+    unique() %>%
+    toupper() %>%
+    gsub("Á", "A", .) %>%
+    gsub("É", "E", .) %>%
+    gsub("Í", "I", .) %>%
+    gsub("Ó", "O", .) %>%
+    gsub("Ú", "U", .) %>%
+    gsub("À", "A", .) %>%
+    gsub("È", "E", .) %>%
+    gsub("Ì", "I", .) %>%
+    gsub("Ò", "O", .) %>%
+    gsub("Ù", "U", .)
+  prov <- Distrital %>%
+    filter(nombres == texto) %>%
+    select(Provincia) %>%
+    unique() %>%
+    toupper() %>%
+    gsub("Á", "A", .) %>%
+    gsub("É", "E", .) %>%
+    gsub("Í", "I", .) %>%
+    gsub("Ó", "O", .) %>%
+    gsub("Ú", "U", .) %>%
+    gsub("À", "A", .) %>%
+    gsub("È", "E", .) %>%
+    gsub("Ì", "I", .) %>%
+    gsub("Ò", "O", .) %>%
+    gsub("Ù", "U", .)
+  dts <- Distrital %>%
+    filter(nombres == texto) %>%
+    select(Distrito) %>%
+    unique() %>%
+    toupper() %>%
+    gsub("Á", "A", .) %>%
+    gsub("É", "E", .) %>%
+    gsub("Í", "I", .) %>%
+    gsub("Ó", "O", .) %>%
+    gsub("Ú", "U", .) %>%
+    gsub("À", "A", .) %>%
+    gsub("È", "E", .) %>%
+    gsub("Ì", "I", .) %>%
+    gsub("Ò", "O", .) %>%
+    gsub("Ù", "U", .)
+  
+  cadena_limpia <- gsub("\\.[0-9]+$", "", cadena) 
+  
+    if (str_detect(cadena_limpia, "DEL")) {
+  resultado <- str_split(cadena_limpia, pattern = "DEL", n = 2, simplify = TRUE)[, 2] %>%
+    str_trim()
+  } else if (str_detect(cadena_limpia, "DE")) {
+    resultado <- str_split(cadena_limpia, pattern = "DE", n = 2, simplify = TRUE)[, 2] %>%
+    str_trim()
+  } else {
+    resultado <- str_split(cadena_limpia, pattern = "DISTRITAL", n = 2, simplify = TRUE)[, 2] %>%
+    str_trim()
+  }
+  
+  patron <- paste0("\\b", resultado, "\\b")
+  
+  coincide <- Uniformizado_Distrital$Entidad[which(str_detect(Uniformizado_Distrital$Entidad,patron))]
+  
+  machu <- Uniformizado_Distrital %>%
+    filter(Uniformizado_Distrital$Entidad %in% coincide)
+  
+  pichu <- machu$Entidad[which(str_detect(machu$Departamento,depa))] 
+  plus <- machu$Entidad[which(str_detect(machu$Provincia,prov))]
+  reach <- machu$Entidad[which(str_detect(machu$Distrito,dts))]
+  exact <- machu$Entidad[which(machu$Distrito %in% dts)]
+  
+  pat <- paste0(patron, "$")
+  majal <- Uniformizado_Distrital$Entidad[which(str_detect(Uniformizado_Distrital$Entidad,pat))]
+  
+  if(length(pichu) == 1) {
+    kym <- pichu
+  } else {
+    kym <- plus
+  } 
+  
+  if(length(kym) == 1) {
+    dudo <- kym
+  } else {
+    dudo <- reach
+  }
+  
+  if(length(dudo) == 1) {
+    medio <- dudo
+  } else {
+    medio <- exact
+  }
+  
+  if(length(medio) == 1) {
+    casi <- medio
+  } else {
+    casi <- majal
+  }
+  
+  if(length(casi) == 1) {
+    final <- casi
+  } else {
+    final <- "No sale"
+  }
+  
+  #se agregaron estas líneas utilizando el indice Jaro-Winker, en caso no funcione ninguna función: Tiene exactitudes con todos los casos hasta el momento. 
+  #Hay que probar veracidad con otras BD sucias
+  #semodificó el print "no" con este indice
+  #se usó este indice porque los errores eran de escritura
+  similitudes <- sapply(Uniformizado_Distrital$Entidad, function(x) 1 - stringdist(cadena_limpia, x, method = "jw"))
+  most_similar_index <- which.max(similitudes)
+  
+  if(length(coincide) == 1) {
+    print(coincide)
+  } else if(length(coincide) == 0) {
+    print(Uniformizado_Distrital$Entidad[most_similar_index])
+  } else {
+    print(final)
+  }
+}
+
+
+Distrital$Uniformizado <- sapply(Distrital$nombres, golos_distrital)
+```
+MUNICIPALIDADES PROVINCIALES
+```{r}
+golos_provincial <- function(texto){
+  cadena <- texto %>%
+    toupper() %>%
+    gsub("Á", "A", .) %>%
+    gsub("É", "E", .) %>%
+    gsub("Í", "I", .) %>%
+    gsub("Ó", "O", .) %>%
+    gsub("Ú", "U", .) %>%
+    gsub("À", "A", .) %>%
+    gsub("È", "E", .) %>%
+    gsub("Ì", "I", .) %>%
+    gsub("Ò", "O", .) %>%
+    gsub("Ù", "U", .)
+  depa <- Provincial %>%
+    filter(nombres == texto) %>%
+    select(Departamento) %>%
+    unique() %>%
+    toupper() %>%
+    gsub("Á", "A", .) %>%
+    gsub("É", "E", .) %>%
+    gsub("Í", "I", .) %>%
+    gsub("Ó", "O", .) %>%
+    gsub("Ú", "U", .) %>%
+    gsub("À", "A", .) %>%
+    gsub("È", "E", .) %>%
+    gsub("Ì", "I", .) %>%
+    gsub("Ò", "O", .) %>%
+    gsub("Ù", "U", .)
+  prov <- Provincial %>%
+    filter(nombres == texto) %>%
+    select(Provincia) %>%
+    unique() %>%
+    toupper() %>%
+    gsub("Á", "A", .) %>%
+    gsub("É", "E", .) %>%
+    gsub("Í", "I", .) %>%
+    gsub("Ó", "O", .) %>%
+    gsub("Ú", "U", .) %>%
+    gsub("À", "A", .) %>%
+    gsub("È", "E", .) %>%
+    gsub("Ì", "I", .) %>%
+    gsub("Ò", "O", .) %>%
+    gsub("Ù", "U", .)
+  
+  cadena_limpia <- gsub("\\.[0-9]+$", "", cadena) 
+  
+    if (str_detect(cadena_limpia, "DEL")) {
+  resultado <- str_split(cadena_limpia, pattern = "DEL", n = 2, simplify = TRUE)[, 2] %>%
+    str_trim()
+  } else if (str_detect(cadena_limpia, "DE")) {
+    resultado <- str_split(cadena_limpia, pattern = "DE", n = 2, simplify = TRUE)[, 2] %>%
+    str_trim()
+  } else {
+    resultado <- str_split(cadena_limpia, pattern = "PROVINCIAL", n = 2, simplify = TRUE)[, 2] %>%
+    str_trim()
+  }
+  
+  patron <- paste0("\\b", resultado, "\\b")
+  
+  coincide <- Uniformizado_Provincial$Entidad[which(str_detect(Uniformizado_Provincial$Entidad,patron))]
+  
+  machu <- Uniformizado_Provincial %>%
+    filter(Uniformizado_Provincial$Entidad %in% coincide)
+  
+  pichu <- machu$Entidad[which(str_detect(machu$Departamento,depa))] 
+  plus <- machu$Entidad[which(str_detect(machu$Provincia,prov))]
+  
+  pat <- paste0(patron, "$")
+  majal <- Uniformizado_Provincial$Entidad[which(str_detect(Uniformizado_Provincial$Entidad,pat))]
+  
+  if(length(pichu) == 1) {
+    kym <- pichu
+  } else {
+    kym <- plus
+  }
+  
+  if(length(kym) == 1) {
+    casi <- kym
+  } else {
+    casi <- majal
+  }
+  
+  if(length(casi) == 1) {
+    final <- casi
+  } else {
+    final <- "No sale"
+  }
+  
+  #se agregaron estas líneas utilizando el indice Jaro-Winker, en caso no funcione ninguna función: Tiene exactitudes con todos los casos hasta el momento. 
+  #Hay que probar veracidad con otras BD sucias
+  #semodificó el print "no" con este indice
+  #se usó este indice porque los errores eran de escritura
+  similitudes <- sapply(Uniformizado_Provincial$Entidad, function(x) 1 - stringdist(cadena_limpia, x, method = "jw"))
+  most_similar_index <- which.max(similitudes)
+  
+  if(length(coincide) == 1) {
+    print(coincide)
+  } else if(length(coincide) == 0) {
+    print(Uniformizado_Provincial$Entidad[most_similar_index])
+  } else {
+    print(final)
+  }
+}
+
+Provincial$Uniformizado <- sapply(Provincial$nombres, golos_provincial)
+```
+MUNICIPALIDADES
+```{r}
+golos_residuo <- function(texto){
+  cadena <- texto %>%
+    toupper() %>%
+    gsub("Á", "A", .) %>%
+    gsub("É", "E", .) %>%
+    gsub("Í", "I", .) %>%
+    gsub("Ó", "O", .) %>%
+    gsub("Ú", "U", .) %>%
+    gsub("À", "A", .) %>%
+    gsub("È", "E", .) %>%
+    gsub("Ì", "I", .) %>%
+    gsub("Ò", "O", .) %>%
+    gsub("Ù", "U", .)
+  depa <- Residuo %>%
+    filter(nombres == texto) %>%
+    select(Departamento) %>%
+    unique() %>%
+    toupper() %>%
+    gsub("Á", "A", .) %>%
+    gsub("É", "E", .) %>%
+    gsub("Í", "I", .) %>%
+    gsub("Ó", "O", .) %>%
+    gsub("Ú", "U", .) %>%
+    gsub("À", "A", .) %>%
+    gsub("È", "E", .) %>%
+    gsub("Ì", "I", .) %>%
+    gsub("Ò", "O", .) %>%
+    gsub("Ù", "U", .)
+  prov <- Residuo %>%
+    filter(nombres == texto) %>%
+    select(Provincia) %>%
+    unique() %>%
+    toupper() %>%
+    gsub("Á", "A", .) %>%
+    gsub("É", "E", .) %>%
+    gsub("Í", "I", .) %>%
+    gsub("Ó", "O", .) %>%
+    gsub("Ú", "U", .) %>%
+    gsub("À", "A", .) %>%
+    gsub("È", "E", .) %>%
+    gsub("Ì", "I", .) %>%
+    gsub("Ò", "O", .) %>%
+    gsub("Ù", "U", .)
+  dts <- Residuo %>%
+    filter(nombres == texto) %>%
+    select(Distrito) %>%
+    unique() %>%
+    toupper() %>%
+    gsub("Á", "A", .) %>%
+    gsub("É", "E", .) %>%
+    gsub("Í", "I", .) %>%
+    gsub("Ó", "O", .) %>%
+    gsub("Ú", "U", .) %>%
+    gsub("À", "A", .) %>%
+    gsub("È", "E", .) %>%
+    gsub("Ì", "I", .) %>%
+    gsub("Ò", "O", .) %>%
+    gsub("Ù", "U", .)
+  
+  cadena_limpia <- gsub("\\.[0-9]+$", "", cadena) 
+  
+    if (str_detect(cadena_limpia, "MUNICIPALIDAD DEL")) {
+  resultado <- str_split(cadena_limpia, pattern = "MUNICIPALIDAD DEL", n = 2, simplify = TRUE)[, 2] %>%
+    str_trim()
+  } else if (str_detect(cadena_limpia, "MUNICIPALIDAD DE")) {
+    resultado <- str_split(cadena_limpia, pattern = "MUNICIPALIDAD DE", n = 2, simplify = TRUE)[, 2] %>%
+    str_trim()
+  } else {
+    resultado <- str_split(cadena_limpia, pattern = "MUNICIPALIDAD", n = 2, simplify = TRUE)[, 2] %>%
+    str_trim()
+  }
+  
+  patron <- paste0("\\b", resultado, "\\b")
+  coincide <- Uniformizado_Distrital$Entidad[which(str_detect(Uniformizado_Distrital$Entidad,patron))]
+  coincide2 <- Uniformizado_Provincial$Entidad[which(str_detect(Uniformizado_Provincial$Entidad,patron))]
+  coincide3 <- Uniformizado_Lima$Entidad[which(str_detect(Uniformizado_Lima$Entidad,patron))]
+  
+  machu <- Uniformizado_Distrital %>%
+    filter(Uniformizado_Distrital$Entidad %in% coincide)
+  pichu <- machu$Entidad[which(str_detect(machu$Departamento,depa))] 
+  picha <- machu$Entidad[which(str_detect(machu$Provincia,prov))] 
+  piche <- machu$Entidad[which(str_detect(machu$Distrito,dts))] 
+  
+  pat <- paste0(patron, "$")
+  majal <- Uniformizado_Distrital$Entidad[which(str_detect(Uniformizado_Distrital$Entidad,pat))]
+  
+  if(length(pichu) == 1) {
+    kym <- pichu
+  } else {
+    kym <- picha
+  }
+  
+  if(length(kym) == 1) {
+    medio <- kym
+  } else {
+    medio <- piche
+  }
+  
+  if(length(medio) == 1) {
+    casi <- medio
+  } else {
+    casi <- majal
+  }
+  
+  if(length(casi) == 1) {
+    final <- casi
+  } else {
+    final <- NA
+  }
+  
+  if(length(coincide2) == 1){
+    caso_m <- coincide2
+  } else {
+    caso_m <- coincide3 #AGREGADO
+  }
+  
+  if(length(caso_m) == 1){#AGREGADO
+    caso_p <- caso_m
+  } else {
+    caso_p <- NA
+  }
+  
+  if(length(coincide) == 1) {
+    print(coincide)
+  } else if(length(coincide) == 0) {
+    print(caso_p)
+  } else {
+    print(final)
+  }
+}
+
+Residuo$Uniformizado <- sapply(Residuo$nombres, golos_residuo)
+Residuo <- Residuo[!is.na(Residuo$Uniformizado), ]
+```
+
+
+
+SIGLAS - NACIONAL: FALTA
+```{r}
+dic_siglas <- Unif %>%
+  select(10:12) %>%
+  filter(str_detect(`Nivel de gobierno`, "NACIONAL")) %>%
+  select(-`Nivel de gobierno`)
+```
+HOSPITALES
+```{r}
+Hospitales <- S %>%
+  filter(str_detect(nombres, regex("Hospital", ignore_case = TRUE)))
+
+Hosp <- function(texto){
+  cadena <- texto %>%
+    toupper() %>%
+    gsub("Á", "A", .) %>%
+    gsub("É", "E", .) %>%
+    gsub("Í", "I", .) %>%
+    gsub("Ó", "O", .) %>%
+    gsub("Ú", "U", .) %>%
+    gsub("À", "A", .) %>%
+    gsub("È", "E", .) %>%
+    gsub("Ì", "I", .) %>%
+    gsub("Ò", "O", .) %>%
+    gsub("Ù", "U", .)
+  
+  resultado <- str_split(cadena, pattern = "HOSPITAL", n = 2, simplify = TRUE)[, 2] %>%
+    str_trim()
+  
+  print(resultado)
+}
+
+Hospitales$Uniformizado <- sapply(Hospitales$nombres, Hosp)
+```
+
+
+MERGE
+```{r}
+Distrital_C <- Distrital[,c("Codigo","Uniformizado")]
+Provincial_C <- Provincial[,c("Codigo","Uniformizado")]
+Residuo_C <- Residuo[,c("Codigo","Uniformizado")]
+Combinado <- bind_rows(Distrital_C, Provincial_C,Residuo_C)
+
+
+BD_Actualizada <- merge(No_Unif,Combinado, by.x = "codigo_unico", by.y = "Codigo", all.x = T)
+BD_Actualizada <- merge(BD_Actualizada,Siglas, by.x = "Uniformizado", by.y = "Entidad", all.x = T)
+
+BD_Actualizada <- BD_Actualizada %>%
+  select(codigo_unico, Uniformizado, Sigla, everything())
+
+BD_Actualizada <- BD_Actualizada[order(BD_Actualizada$codigo_unico), ]
+```
+
+OPCIONAL: AGREGAR SECTORISTA
+```{r}
+Sectoristas <- Unif[,c(8,10)]
+BD_Actualizada <- merge(BD_Actualizada,Sectoristas, all.x = T)
+```
+
+missing: agregar función para exportar directamente al drive de origen
+```{r}
+sheet_write(BD_Actualizada, sucia, sheet = "RStudio")
+```
+
+
+VEMOS CASOS QUE NO FUNCIONARON
+```{r}
+omitidos <- BD_Actualizada %>%
+  filter(is.na(Uniformizado))
+```
+
+
+
+
+
+
+
